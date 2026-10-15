@@ -215,6 +215,27 @@
     });
   });
 
+  // Spacebar toggles start/stop (works once the widget has been clicked).
+  // Ignored while typing in a field; buttons already handle space natively.
+  document.addEventListener('keydown', function (e) {
+    if (e.code !== 'Space' || e.repeat) return;
+    var t = e.target && e.target.tagName;
+    if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA' || t === 'BUTTON') return;
+    e.preventDefault();
+    running ? stop() : start();
+  });
+
+  // Hovering the widget gives it keyboard focus (so Space works without a click);
+  // moving the mouse out releases it again.
+  document.body.tabIndex = -1;
+  document.body.style.outline = 'none';
+  document.documentElement.addEventListener('mouseenter', function () {
+    try { window.focus(); document.body.focus({ preventScroll: true }); } catch (err) {}
+  });
+  document.documentElement.addEventListener('mouseleave', function () {
+    try { window.blur(); } catch (err) {}
+  });
+
   load(); syncOffsetLimit();
   setInterval(tick, 250); tick();
 })();
