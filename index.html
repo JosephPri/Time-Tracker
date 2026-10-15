@@ -22,25 +22,25 @@
   body {
     background: var(--bg); color: var(--fg);
     font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
-    padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+    padding: 8px 12px; display: flex; flex-direction: column; gap: 6px;
   }
   .clock { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; border-radius: 6px; }
   .time {
-    font-size: 34px; line-height: 1; font-weight: 600; letter-spacing: -0.02em;
+    font-size: 32px; line-height: 1; font-weight: 600; letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums;
   }
-  .time small { font-size: 16px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+  .time small { font-size: 15px; font-weight: 500; color: var(--muted); margin-left: 3px; }
   .count { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; }
-  .row { display: flex; gap: 6px; align-items: end; }
-  label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 11px; flex: 1 1 0; min-width: 0; }
+  .row { display: flex; gap: 5px; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 1px; color: var(--muted); font-size: 11px; line-height: 1.3; flex: 1 1 0; min-width: 0; }
   input, select {
     font: inherit; font-size: 13px; color: var(--fg); background: var(--field);
-    border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; width: 100%;
+    border: 1px solid var(--line); border-radius: 5px; padding: 3px 6px; width: 100%;
   }
-  input[type=range] { padding: 0; height: 26px; accent-color: var(--accent); }
+  input[type=range] { padding: 0; height: 24px; margin: 0; accent-color: var(--accent); }
   button {
     font: inherit; font-weight: 600; cursor: pointer; border-radius: 5px;
-    border: 1px solid var(--line); background: var(--field); color: var(--fg); padding: 5px 10px;
+    border: 1px solid var(--line); background: var(--field); color: var(--fg); padding: 4px 10px;
   }
   button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); min-width: 64px; }
   button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
