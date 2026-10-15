@@ -21,31 +21,29 @@
   html, body { margin: 0; height: 100%; }
   body {
     background: var(--bg); color: var(--fg);
-    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
-    padding: 18px 20px; display: flex; flex-direction: column; gap: 16px;
+    font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
   }
-  .clock { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-  .next {
-    font: 600 44px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
-    letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
+  .clock { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; border-radius: 6px; }
+  .time {
+    font-size: 34px; line-height: 1; font-weight: 600; letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
   }
-  .next.off { color: var(--muted); }
-  .count { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
-  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
-  label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); font-size: 13px; }
+  .time small { font-size: 16px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+  .count { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; font-size: 12px; }
+  .row { display: flex; gap: 6px; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 2px; color: var(--muted); font-size: 11px; flex: 1 1 0; min-width: 0; }
   input, select {
-    font: inherit; color: var(--fg); background: var(--field);
-    border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 100%;
+    font: inherit; font-size: 13px; color: var(--fg); background: var(--field);
+    border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; width: 100%;
   }
-  input[type=range] { padding: 0; accent-color: var(--accent); }
-  .grow { flex: 1 1 110px; }
+  input[type=range] { padding: 0; height: 26px; accent-color: var(--accent); }
   button {
-    font: inherit; font-weight: 600; cursor: pointer; border-radius: 6px;
-    border: 1px solid var(--line); background: var(--field); color: var(--fg); padding: 8px 14px;
+    font: inherit; font-weight: 600; cursor: pointer; border-radius: 5px;
+    border: 1px solid var(--line); background: var(--field); color: var(--fg); padding: 5px 10px;
   }
-  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); flex: 1 1 120px; }
+  button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); min-width: 64px; }
   button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .hint { color: var(--muted); font-size: 13px; margin: 0; }
   .flash { animation: flash 1.2s ease-out; }
   @keyframes flash { 0% { background: color-mix(in srgb, var(--accent) 35%, transparent); } 100% { background: transparent; } }
   @media (prefers-reduced-motion: reduce) { .flash { animation: none; } }
@@ -53,12 +51,12 @@
 </head>
 <body>
   <div class="clock" id="clock">
-    <div class="next off" id="next">--:--</div>
-    <div class="count" id="count">Stopped</div>
+    <div class="time" id="time">--:--</div>
+    <div class="count" id="count">Off</div>
   </div>
 
   <div class="row">
-    <label class="grow">Every (minutes)
+    <label>Every (min)
       <select id="interval">
         <option value="1">1</option>
         <option value="2">2</option>
@@ -74,10 +72,10 @@
         <option value="60">60</option>
       </select>
     </label>
-    <label class="grow">Start at minute
-      <input id="offset" type="number" min="0" max="59" value="0" inputmode="numeric">
+    <label>Start at min
+      <input id="offset" type="number" min="0" max="9" value="0" inputmode="numeric">
     </label>
-    <label class="grow">Sound
+    <label>Sound
       <select id="sound">
         <option value="chime">Chime</option>
         <option value="bell">Bell</option>
@@ -88,30 +86,27 @@
   </div>
 
   <div class="row">
-    <label class="grow">Volume
+    <label>Volume
       <input id="volume" type="range" min="0" max="1" step="0.05" value="0.6">
     </label>
     <button id="test" type="button">Test</button>
     <button id="toggle" type="button" class="primary">Start</button>
   </div>
 
-  <p class="hint" id="hint"></p>
-
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var els = { interval: $('interval'), offset: $('offset'), sound: $('sound'), volume: $('volume'),
-              next: $('next'), count: $('count'), toggle: $('toggle'), test: $('test'),
-              hint: $('hint'), clock: $('clock') };
+              time: $('time'), count: $('count'), toggle: $('toggle'), test: $('test'), clock: $('clock') };
   var KEY = 'interval-chime-settings';
-  var running = false, nextAt = 0, timer = null, ctx = null;
+  var FACTORS = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60];
+  var running = false, nextAt = 0, ctx = null;
 
-  // Settings persistence (may be unavailable inside some embeds)
   function save() {
     try {
       localStorage.setItem(KEY, JSON.stringify({
         interval: els.interval.value, offset: els.offset.value,
-        sound: els.sound.value, volume: els.volume.value, running: running
+        sound: els.sound.value, volume: els.volume.value
       }));
     } catch (e) {}
   }
@@ -125,12 +120,10 @@
     } catch (e) {}
   }
 
-  var FACTORS = [1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60];
   function getInterval() {
     var n = parseInt(els.interval.value, 10);
     return FACTORS.indexOf(n) === -1 ? 10 : n;
   }
-  // Offset only makes sense within one interval (e.g. every 10 min: 0-9)
   function getOffset() {
     var o = parseInt(els.offset.value, 10) || 0;
     return Math.max(0, Math.min(getInterval() - 1, o));
@@ -140,7 +133,7 @@
     if ((parseInt(els.offset.value, 10) || 0) > getInterval() - 1) els.offset.value = getInterval() - 1;
   }
 
-  // Next alarm lands on clock-aligned marks: offset, offset+N, offset+2N ... minutes after midnight
+  // Alarms land on clock-aligned marks: offset, offset+N, offset+2N ... minutes after midnight
   function computeNext(from) {
     var d = new Date(from); d.setHours(0, 0, 0, 0);
     var mid = d.getTime(), step = getInterval() * 60000, off = getOffset() * 60000;
@@ -148,23 +141,12 @@
     return mid + off + n * step;
   }
 
-  function fmt(t) {
-    var d = new Date(t);
-    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  }
   function fmtCount(ms) {
     var s = Math.max(0, Math.ceil(ms / 1000)), m = Math.floor(s / 60);
     return m + ':' + String(s % 60).padStart(2, '0') + ' left';
   }
 
-  function updateHint() {
-    var n = getInterval(), o = getOffset();
-    var marks = [], t = computeNext(Date.now()), i;
-    for (i = 0; i < 4; i++) { marks.push(fmt(t)); t += n * 60000; }
-    els.hint.textContent = 'Rings at ' + marks.join(', ') + '\u2026';
-  }
-
-  // ---- Sound (generated with Web Audio, no files needed) ----
+  // ---- Sound (generated with Web Audio) ----
   function audio() {
     if (!ctx) { var AC = window.AudioContext || window.webkitAudioContext; ctx = new AC(); }
     if (ctx.state === 'suspended') ctx.resume();
@@ -193,38 +175,34 @@
     }
   }
 
-  // ---- Loop ----
+  // ---- Loop: always updates the clock; rings only while running ----
   function tick() {
+    var now = Date.now(), d = new Date(now);
+    var h = d.getHours() % 12 || 12, m = String(d.getMinutes()).padStart(2, '0'), s = String(d.getSeconds()).padStart(2, '0');
+    els.time.innerHTML = h + ':' + m + '<small>' + s + '</small>';
+
     if (!running) return;
-    var now = Date.now();
     if (now >= nextAt) {
-      // Only ring if on time. If we're way past due (laptop slept, tab was
-      // frozen), skip the sound and just reschedule.
+      // Only ring if on time; skip if we woke from sleep long past due
       if (now - nextAt < 3000) {
         play();
         els.clock.classList.remove('flash'); void els.clock.offsetWidth; els.clock.classList.add('flash');
       }
       nextAt = computeNext(now);
-      els.next.textContent = fmt(nextAt);
-      updateHint();
     }
     els.count.textContent = fmtCount(nextAt - now);
   }
 
   function start() {
-    audio(); // must be created from a click so the browser allows sound
+    audio(); // created from a click so the browser allows sound
     running = true;
     nextAt = computeNext(Date.now());
-    els.next.textContent = fmt(nextAt); els.next.classList.remove('off');
     els.toggle.textContent = 'Stop';
-    clearInterval(timer); timer = setInterval(tick, 250);
-    tick(); updateHint(); save();
+    tick();
   }
   function stop() {
-    running = false; clearInterval(timer);
-    els.next.textContent = '--:--'; els.next.classList.add('off');
-    els.count.textContent = 'Stopped'; els.toggle.textContent = 'Start';
-    updateHint(); save();
+    running = false;
+    els.count.textContent = 'Off'; els.toggle.textContent = 'Start';
   }
 
   els.toggle.addEventListener('click', function () { running ? stop() : start(); });
@@ -232,14 +210,13 @@
   ['interval', 'offset', 'sound', 'volume'].forEach(function (k) {
     els[k].addEventListener('input', function () {
       if (k === 'interval') syncOffsetLimit();
-      if (running && (k === 'interval' || k === 'offset')) {
-        nextAt = computeNext(Date.now()); els.next.textContent = fmt(nextAt);
-      }
-      updateHint(); save();
+      if (running && (k === 'interval' || k === 'offset')) nextAt = computeNext(Date.now());
+      save();
     });
   });
 
-  load(); syncOffsetLimit(); updateHint();
+  load(); syncOffsetLimit();
+  setInterval(tick, 250); tick();
 })();
 </script>
 </body>
