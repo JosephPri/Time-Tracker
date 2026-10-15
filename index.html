@@ -30,15 +30,8 @@
     font-size: 32px; line-height: 1; font-weight: 600; letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums;
   }
-  /* digits take on a faint green-blue tint from the bottom up as the next alarm approaches (--p = 0..100%) */
-  .time {
-    --tint: color-mix(in srgb, var(--accent) 36%, var(--fg));
-    background: linear-gradient(to top,
-      var(--tint) calc(var(--p, 0%) * 0.9 - 2%),
-      var(--fg) calc(var(--p, 0%) * 0.9 + 6%));
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  .time small { font-size: 15px; font-weight: 500; color: var(--accent); margin-left: 3px; }
+  .time small { font-size: 15px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+  body.running .time small { color: var(--accent); }
   .count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; white-space: nowrap; }
   .row { display: flex; gap: 5px; align-items: end; }
   label { display: flex; flex-direction: column; gap: 1px; color: var(--muted); font-size: 11px; line-height: 1.3; flex: 1 1 0; min-width: 0; }
@@ -77,7 +70,8 @@
       </select>
     </label>
     <label>Start at min
-      <input id="offset" type="number" min="0" max="9" value="0" inputmode="numeric">
+      <!-- max is a loose upper bound here; the script tightens it to (interval - 1) -->
+      <input id="offset" type="number" min="0" max="59" value="0" inputmode="numeric">
     </label>
     <label>Sound
       <select id="sound">
@@ -104,7 +98,12 @@
               time: $('time'), count: $('count'), toggle: $('toggle'), test: $('test'), clock: $('clock') };
   var KEY = 'interval-chime-settings';
   var FACTORS = [5, 10, 15, 20, 30, 60];
-  var running = false, nextAt = 0, ctx = null;
+  var LOOKAHEAD = 2500;   // ms before an alarm at which its sound is pre-scheduled on the audio clock
+  var GRACE = 20000;      // ms: ring late (instead of skipping) if we were throttled by less than this
+  var running = false, nextAt = 0, scheduledFor = 0, ctx = null, pending = [];
+  var lastTick = Date.now(), usingWorker = false;  // If time jumps forward by more than this between ticks, the device was asleep.
+  // Worker ticks every 250ms, so 5s is safe; the setInterval fallback can be throttled to ~1/min in hidden tabs.
+  function sleepGap() { return usingWorker ? 5000 : 70000; }
 
   function save() {
     try {
@@ -156,6 +155,7 @@
     if (ctx.state === 'suspended') ctx.resume();
     return ctx;
   }
+  // `start` is seconds from now on the audio clock, so a chime can be queued ahead of time
   function tone(freq, start, dur, type, gain) {
     var c = audio(), o = c.createOscillator(), g = c.createGain();
     var vol = parseFloat(els.volume.value) * gain;
@@ -165,62 +165,120 @@
     g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + start + dur);
     o.connect(g); g.connect(c.destination);
     o.start(c.currentTime + start); o.stop(c.currentTime + start + dur + 0.05);
+    pending.push(o);
+    o.onended = function () { var i = pending.indexOf(o); if (i !== -1) pending.splice(i, 1); };
   }
-  function play() {
+  function cancelPending() {
+    pending.slice().forEach(function (o) { try { o.stop(); } catch (e) {} });
+    pending = []; scheduledFor = 0;
+  }
+  function play(delay) {
+    var d = delay || 0;
     switch (els.sound.value) {
       case 'bell':
-        tone(660, 0, 2.2, 'sine', 0.8); tone(1320, 0, 1.6, 'sine', 0.3); tone(1980, 0, 1.0, 'sine', 0.15); break;
+        tone(660, d, 2.2, 'sine', 0.8); tone(1320, d, 1.6, 'sine', 0.3); tone(1980, d, 1.0, 'sine', 0.15); break;
       case 'beep':
-        tone(880, 0, 0.35, 'square', 0.25); break;
+        tone(880, d, 0.35, 'square', 0.25); break;
       case 'double':
-        tone(880, 0, 0.18, 'square', 0.25); tone(880, 0.28, 0.18, 'square', 0.25); break;
+        tone(880, d, 0.18, 'square', 0.25); tone(880, d + 0.28, 0.18, 'square', 0.25); break;
       default:
-        tone(523.25, 0, 1.2, 'sine', 0.7); tone(659.25, 0.18, 1.2, 'sine', 0.7); tone(783.99, 0.36, 1.6, 'sine', 0.7);
+        tone(523.25, d, 1.2, 'sine', 0.7); tone(659.25, d + 0.18, 1.2, 'sine', 0.7); tone(783.99, d + 0.36, 1.6, 'sine', 0.7);
     }
   }
 
-  // ---- Loop: always updates the clock; rings only while running ----
+  // ---- Loop ----
   function tick() {
     var now = Date.now(), d = new Date(now);
     var h = d.getHours() % 12 || 12, m = String(d.getMinutes()).padStart(2, '0'), s = String(d.getSeconds()).padStart(2, '0');
     els.time.innerHTML = h + ':' + m + '<small>' + s + '</small>';
 
+    var prev = lastTick, gap = now - prev;
+    lastTick = now;
     if (!running) return;
+
+    // Woke from sleep: turn off so the user has to restart it deliberately
+    if (gap > sleepGap()) { stopForSleep(); return; }
+
+    // Pre-schedule the sound on the audio clock just before the mark, so a throttled
+    // timer in a background tab can't make it late.
+    var until = nextAt - now;
+    if (until > 0 && until <= LOOKAHEAD && scheduledFor !== nextAt) {
+      play(until / 1000);
+      scheduledFor = nextAt;
+    }
+
     if (now >= nextAt) {
-      // Only ring if on time; skip if we woke from sleep long past due
-      if (now - nextAt < 3000) {
-        play();
+      if (scheduledFor === nextAt) {
+        // already queued on the audio clock; nothing more to do
+      } else if (now - nextAt < GRACE) {
+        play(); // timer was throttled past the mark, but not by much: ring now
+      } else {
+        stopForSleep(); // missed the mark by a long way (sleep): turn off
+        return;
       }
       nextAt = computeNext(now);
+      scheduledFor = 0;
     }
     els.count.textContent = fmtCount(nextAt - now);
-    document.body.style.setProperty('--p', Math.max(0, Math.min(100, 100 - (nextAt - now) / (getInterval() * 60000) * 100)) + '%');
+  }
+
+  // Timer source: a Web Worker is not subject to the heavy throttling that hidden-tab
+  // setInterval gets. Falls back to setInterval if workers/blobs are blocked (e.g. some embeds).
+  function startTimer() {
+    try {
+      var src = 'setInterval(function(){postMessage(0)},250)';
+      var w = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      usingWorker = true;
+      w.onmessage = tick;
+      w.onerror = function () { w.terminate(); usingWorker = false; setInterval(tick, 250); };
+    } catch (e) {
+      usingWorker = false;
+      setInterval(tick, 250);
+    }
+  }
+
+  function stopForSleep() {
+    stop();
+    els.count.textContent = 'Stopped after sleep';
   }
 
   function start() {
     audio(); // created from a click so the browser allows sound
     running = true;
+    lastTick = Date.now();
+    scheduledFor = 0;
     nextAt = computeNext(Date.now());
     els.toggle.textContent = 'Stop';
+    document.body.classList.add('running');
     tick();
   }
   function stop() {
     running = false;
-    els.count.textContent = 'Off'; els.toggle.textContent = 'Start'; document.body.style.setProperty('--p', '0%');
+    cancelPending();
+    els.count.textContent = 'Off'; els.toggle.textContent = 'Start';
+    document.body.classList.remove('running');
   }
 
   els.toggle.addEventListener('click', function () { running ? stop() : start(); });
-  els.test.addEventListener('click', play);
+  els.test.addEventListener('click', function () { play(); });
   ['interval', 'offset', 'sound', 'volume'].forEach(function (k) {
     els[k].addEventListener('input', function () {
       if (k === 'interval') syncOffsetLimit();
-      if (running && (k === 'interval' || k === 'offset')) nextAt = computeNext(Date.now());
+      if (running && (k === 'interval' || k === 'offset' || k === 'sound')) {
+        cancelPending(); // drop any chime queued for the old schedule/sound
+        nextAt = computeNext(Date.now());
+      }
       save();
     });
   });
 
+  // Catch up immediately when the tab/embed becomes visible again
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) { if (ctx && ctx.state === 'suspended') ctx.resume(); tick(); }
+  });
+
   load(); syncOffsetLimit();
-  setInterval(tick, 250); tick();
+  startTimer(); tick();
 })();
 </script>
 </body>
