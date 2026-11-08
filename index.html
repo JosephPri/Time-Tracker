@@ -274,6 +274,19 @@
     });
   });
 
+  // Best-effort sound when the tab/page is closed. Browsers tear the page down quickly,
+  // so this only works if the AudioContext was already unlocked (by clicking Start or Test).
+  var closedAt = 0;
+  function closeSound() {
+    var now = Date.now();
+    if (now - closedAt < 1000) return;  // pagehide and beforeunload can both fire
+    closedAt = now;
+    if (!running || !ctx || ctx.state !== 'running') return;
+    try { play(); } catch (e) {}
+  }
+  window.addEventListener('beforeunload', closeSound);
+  window.addEventListener('pagehide', closeSound);
+
   // Catch up immediately when the tab/embed becomes visible again
   document.addEventListener('visibilitychange', function () {
     if (!document.hidden) { if (ctx && ctx.state === 'suspended') ctx.resume(); tick(); }
