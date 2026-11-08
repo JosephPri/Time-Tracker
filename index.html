@@ -243,7 +243,7 @@
   }
 
   function stopForSleep() {
-    stop();
+    stop(true);
     els.count.textContent = 'Stopped after sleep';
   }
 
@@ -267,16 +267,18 @@
     els.toggle.textContent = 'Stop';
     document.body.classList.add('running');
   }
-  function stop() {
+  // keepSaved: stop without overwriting the saved on/off state, so an automatic stop
+  // (sleep / frozen embed) doesn't cancel resuming on the next load. Only a manual Stop is remembered.
+  function stop(keepSaved) {
     running = false;
     cancelPending();
     els.count.textContent = 'Off'; els.toggle.textContent = 'Start';
     document.body.classList.remove('running');
-    save();
+    if (!keepSaved) save();
   }
   function audioReady() { return !!ctx && ctx.state === 'running'; }
 
-  els.toggle.addEventListener('click', function () { running ? stop() : start(); });
+  els.toggle.addEventListener('click', function () { running ? stop(false) : start(); });
   els.test.addEventListener('click', function () { play(); });
   ['interval', 'offset', 'sound', 'volume'].forEach(function (k) {
     els[k].addEventListener('input', function () {
