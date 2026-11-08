@@ -302,7 +302,10 @@
   });
 
   load(); syncOffsetLimit();
-  if (wasRunning) restoreRunning();
+  if (wasRunning) {
+    restoreRunning();
+    try { audio(); } catch (e) {}  // create the context now; it runs right away if the browser allows autoplay, otherwise it waits for a click
+  }
   startTimer(); tick();
 })();
 </script>
