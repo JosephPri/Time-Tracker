@@ -102,6 +102,7 @@
   var FACTORS = [5, 10, 15, 20, 30, 60];
   var LOOKAHEAD = 2500;   // ms before an alarm at which its sound is pre-scheduled on the audio clock
   var GRACE = 20000;      // ms: ring late (instead of skipping) if we were throttled by less than this
+  var wasRunning = false;
   var running = false, nextAt = 0, scheduledFor = 0, ctx = null, pending = [];
   var lastTick = Date.now(), usingWorker = false;  // If time jumps forward by more than this between ticks, the device was asleep.
   // Worker ticks every 250ms, so 5s is safe; the setInterval fallback can be throttled to ~1/min in hidden tabs.
@@ -111,7 +112,8 @@
     try {
       localStorage.setItem(KEY, JSON.stringify({
         interval: els.interval.value, offset: els.offset.value,
-        sound: els.sound.value, volume: els.volume.value
+        sound: els.sound.value, volume: els.volume.value,
+        running: running
       }));
     } catch (e) {}
   }
@@ -122,6 +124,7 @@
       if (FACTORS.indexOf(parseInt(s.interval, 10)) !== -1) els.interval.value = s.interval;
       els.offset.value = s.offset;
       els.sound.value = s.sound; els.volume.value = s.volume;
+      wasRunning = !!s.running;
     } catch (e) {}
   }
 
@@ -204,7 +207,7 @@
     // Pre-schedule the sound on the audio clock just before the mark, so a throttled
     // timer in a background tab can't make it late.
     var until = nextAt - now;
-    if (until > 0 && until <= LOOKAHEAD && scheduledFor !== nextAt) {
+    if (until > 0 && until <= LOOKAHEAD && scheduledFor !== nextAt && audioReady()) {
       play(until / 1000);
       scheduledFor = nextAt;
     }
@@ -213,7 +216,7 @@
       if (scheduledFor === nextAt) {
         // already queued on the audio clock; nothing more to do
       } else if (now - nextAt < GRACE) {
-        play(); // timer was throttled past the mark, but not by much: ring now
+        if (audioReady()) play(); // timer was throttled past the mark, but not by much: ring now
       } else {
         stopForSleep(); // missed the mark by a long way (sleep): turn off
         return;
@@ -221,7 +224,7 @@
       nextAt = computeNext(now);
       scheduledFor = 0;
     }
-    els.count.textContent = fmtCount(nextAt - now);
+    els.count.textContent = fmtCount(nextAt - now) + (audioReady() ? '' : ' 🔇');
   }
 
   // Timer source: a Web Worker is not subject to the heavy throttling that hidden-tab
@@ -252,14 +255,26 @@
     nextAt = computeNext(Date.now());
     els.toggle.textContent = 'Stop';
     document.body.classList.add('running');
+    save();
     tick();
+  }
+  // Resume after the tab/page was closed and reopened while running
+  function restoreRunning() {
+    running = true;
+    lastTick = Date.now();
+    scheduledFor = 0;
+    nextAt = computeNext(Date.now());
+    els.toggle.textContent = 'Stop';
+    document.body.classList.add('running');
   }
   function stop() {
     running = false;
     cancelPending();
     els.count.textContent = 'Off'; els.toggle.textContent = 'Start';
     document.body.classList.remove('running');
+    save();
   }
+  function audioReady() { return !!ctx && ctx.state === 'running'; }
 
   els.toggle.addEventListener('click', function () { running ? stop() : start(); });
   els.test.addEventListener('click', function () { play(); });
@@ -274,18 +289,10 @@
     });
   });
 
-  // Best-effort sound when the tab/page is closed. Browsers tear the page down quickly,
-  // so this only works if the AudioContext was already unlocked (by clicking Start or Test).
-  var closedAt = 0;
-  function closeSound() {
-    var now = Date.now();
-    if (now - closedAt < 1000) return;  // pagehide and beforeunload can both fire
-    closedAt = now;
-    if (!running || !ctx || ctx.state !== 'running') return;
-    try { play(); } catch (e) {}
-  }
-  window.addEventListener('beforeunload', closeSound);
-  window.addEventListener('pagehide', closeSound);
+  // After a reload the browser blocks sound until the page gets a click/key press, so unlock on first interaction
+  ['pointerdown', 'keydown'].forEach(function (ev) {
+    document.addEventListener(ev, function () { if (running) audio(); }, true);
+  });
 
   // Catch up immediately when the tab/embed becomes visible again
   document.addEventListener('visibilitychange', function () {
@@ -293,6 +300,7 @@
   });
 
   load(); syncOffsetLimit();
+  if (wasRunning) restoreRunning();
   startTimer(); tick();
 })();
 </script>
