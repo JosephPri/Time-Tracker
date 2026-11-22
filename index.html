@@ -24,16 +24,35 @@
     font: 13px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
     padding: 4px 22px 18px; display: flex; flex-direction: column; gap: 6px;
   }
-  .clock { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; border-radius: 6px; }
+  .clock { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-radius: 6px; }
   .left { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
   .time {
     font-size: 32px; line-height: 1; font-weight: 600; letter-spacing: -0.02em;
     font-variant-numeric: tabular-nums;
   }
-  .time small { font-size: 15px; font-weight: 500; color: var(--muted); margin-left: 3px; }
+  /* AM/PM over seconds: same size and weight. The inline-block's baseline is its last line (the seconds),
+     so that lines up with the digits' baseline; line-height is tuned so the AM/PM cap-top meets the digits' cap-top. */
+  .time small {
+    display: inline-block; width: 19.2px; margin-left: 5px; vertical-align: baseline;
+    font-weight: 600; color: var(--muted);
+  }
+  /* Both lines fill the same 19.2px width: AM/PM at 12px and the two digits at 14.8px are naturally ~19px wide,
+     and justify takes up the sub-pixel difference (AM is wider than PM). */
+  .time small span { display: block; text-align: justify; text-align-last: justify; white-space: nowrap; }
+  .time small span:first-child { font-size: 12px; line-height: 13px; }
+  .time small span:last-child { font-size: 14.8px; line-height: 17px; }
   body.running .time small { color: var(--accent); }
-  .count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; line-height: 1.3; white-space: nowrap; }
-  body.running .count { color: var(--accent); }
+  /* Muted-speaker icon: far right of the clock row, vertically centred on the digits (not on the whole line box) */
+  .right { display: flex; align-items: center; }
+  .mute { display: inline-flex; margin-top: -1.9px; color: var(--muted); }
+  .mute[hidden] { display: none; }
+  /* While the timer runs the icon is always there: faded when sound works, flashing like a warning when the browser blocks it */
+  .mute { opacity: 0.25; }
+  body:not(.running) .mute { opacity: 1; } /* timer off: shown at full strength in the same grey as the AM/PM */
+  .mute.warn { animation: mute-flash 1.1s ease-in-out infinite; }
+  @keyframes mute-flash { 0%, 35% { opacity: 1; } 50%, 85% { opacity: 0.1; } 100% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .mute.warn { animation: none; opacity: 1; } }
+  .mute.warn { color: var(--accent); } /* grey when faded/working, green only while flashing */
   .row { display: flex; gap: 5px; align-items: end; }
   label { display: flex; flex-direction: column; gap: 1px; color: var(--muted); font-size: 11px; line-height: 1.3; flex: 1 1 0; min-width: 0; }
   input, select {
@@ -46,7 +65,14 @@
     border: 1px solid var(--line); background: var(--field); color: var(--fg); padding: 4px 10px;
   }
   button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
-  #toggle { min-width: 64px; }
+  /* Test and Start/Stop are the same size. While running, the Start/Stop button shows the time left
+     and swaps to "Stop" on hover/keyboard focus; both labels share one grid cell so nothing shifts. */
+  #test, #toggle { flex: none; width: 72px; padding-left: 0; padding-right: 0; white-space: nowrap; }
+  #toggle { display: inline-grid; place-items: center; font-variant-numeric: tabular-nums; }
+  #toggle .t, #toggle .s { grid-area: 1 / 1; }
+  #toggle .s { visibility: hidden; }
+  body.running #toggle:hover .t, body.running #toggle:focus-visible .t { visibility: hidden; }
+  body.running #toggle:hover .s, body.running #toggle:focus-visible .s { visibility: visible; }
   button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   </style>
 </head>
@@ -56,7 +82,9 @@
       <div class="time" id="time">--:--</div>
     </div>
     <div class="right">
-      <div class="count" id="count">Off</div>
+      <span class="mute" id="mute" role="img" title="Timer is off. Press Start to begin." aria-label="Timer is off. Press Start to begin.">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></svg>
+      </span>
     </div>
   </div>
 
@@ -77,10 +105,13 @@
     </label>
     <label>Sound
       <select id="sound">
-        <option value="chime">Chime</option>
-        <option value="bell">Bell</option>
-        <option value="beep">Beep</option>
-        <option value="double">Double beep</option>
+        <option value="lowglass">Low glass</option>
+        <option value="drop">Water drop</option>
+        <option value="bowl">Singing bowl</option>
+        <option value="crystal">Crystal bowl</option>
+        <option value="koshi">Koshi chords</option>
+        <option value="handpan">Handpan</option>
+        <option value="swell">Deep hum</option>
       </select>
     </label>
   </div>
@@ -90,19 +121,30 @@
       <input id="volume" type="range" min="0" max="1" step="0.05" value="0.6">
     </label>
     <button id="test" type="button">Test</button>
-    <button id="toggle" type="button" class="primary">Start</button>
+    <button id="toggle" type="button" class="primary" aria-label="Start timer"><span class="t">Start</span><span class="s">Stop</span></button>
   </div>
 
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var els = { interval: $('interval'), offset: $('offset'), sound: $('sound'), volume: $('volume'),
-              time: $('time'), count: $('count'), toggle: $('toggle'), test: $('test'), clock: $('clock') };
+              time: $('time'), mute: $('mute'), toggle: $('toggle'), tt: $('toggle').querySelector('.t'), test: $('test'), clock: $('clock') };
   var KEY = 'interval-chime-settings';
   var FACTORS = [5, 10, 15, 20, 30, 60];
   var LOOKAHEAD = 2500;   // ms before an alarm at which its sound is pre-scheduled on the audio clock
   var GRACE = 20000;      // ms: ring late (instead of skipping) if we were throttled by less than this
   var wasRunning = false;
+  // Visible label of the Start/Stop button (time left while running) plus a steady accessible name,
+  // so a screen reader isn't told about a new label every second
+  function setToggle(text, name) {
+    if (els.tt.textContent !== text) els.tt.textContent = text;
+    if (els.toggle.getAttribute('aria-label') !== name) els.toggle.setAttribute('aria-label', name);
+  }
+  // Tooltip + screen-reader text for the speaker icon, so it always describes the current state
+  function setMuteTip(text) {
+    if (els.mute.title !== text) { els.mute.title = text; els.mute.setAttribute('aria-label', text); }
+  }
+  var loadedAt = Date.now(), MUTE_HINT_DELAY = 2000; // the audio context needs a moment to start after load, so don't flash the mute icon right away
   var running = false, nextAt = 0, scheduledFor = 0, ctx = null, pending = [];
   var lastTick = Date.now(), usingWorker = false;  // If time jumps forward by more than this between ticks, the device was asleep.
   // Worker ticks every 250ms, so 5s is safe; the setInterval fallback can be throttled to ~1/min in hidden tabs.
@@ -123,7 +165,9 @@
       if (!s) return;
       if (FACTORS.indexOf(parseInt(s.interval, 10)) !== -1) els.interval.value = s.interval;
       els.offset.value = s.offset;
-      els.sound.value = s.sound; els.volume.value = s.volume;
+      // only restore a saved sound that still exists (older versions saved chime/bell/beep/double)
+      if ([].some.call(els.sound.options, function (op) { return op.value === s.sound; })) els.sound.value = s.sound;
+      els.volume.value = s.volume;
       wasRunning = !!s.running;
     } catch (e) {}
   }
@@ -151,25 +195,48 @@
 
   function fmtCount(ms) {
     var s = Math.max(0, Math.ceil(ms / 1000)), m = Math.floor(s / 60);
-    return m + ':' + String(s % 60).padStart(2, '0') + ' left';
+    return m + ':' + String(s % 60).padStart(2, '0');
   }
 
   // ---- Sound (generated with Web Audio) ----
+  var BOOST = 2.2;      // overall loudness multiplier on top of the Volume slider
+  var bus = null;       // all tones feed this bus: dry + reverb -> compressor -> speakers
   function audio() {
-    if (!ctx) { var AC = window.AudioContext || window.webkitAudioContext; ctx = new AC(); }
+    if (!ctx) {
+      var AC = window.AudioContext || window.webkitAudioContext; ctx = new AC();
+      // soft limiter so the louder sounds can't clip, even at full volume
+      var comp = ctx.createDynamicsCompressor();
+      comp.threshold.value = -12; comp.knee.value = 12; comp.ratio.value = 6;
+      comp.attack.value = 0.005; comp.release.value = 0.25;
+      comp.connect(ctx.destination);
+      bus = ctx.createGain(); bus.connect(comp);
+      // reverb: convolve with a generated, decaying noise burst
+      var len = Math.floor(ctx.sampleRate * 3.5), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+      for (var ch = 0; ch < 2; ch++) {
+        var d = ir.getChannelData(ch);
+        for (var i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3);
+      }
+      var conv = ctx.createConvolver(); conv.buffer = ir;
+      var wet = ctx.createGain(); wet.gain.value = 0.45;
+      bus.connect(conv); conv.connect(wet); wet.connect(comp);
+    }
     if (ctx.state === 'suspended') ctx.resume();
     return ctx;
   }
   // `start` is seconds from now on the audio clock, so a chime can be queued ahead of time
-  function tone(freq, start, dur, type, gain) {
+  // opts.to = end frequency (glide), opts.attack = fade-in seconds
+  function tone(freq, start, dur, type, gain, opts) {
+    opts = opts || {};
     var c = audio(), o = c.createOscillator(), g = c.createGain();
-    var vol = parseFloat(els.volume.value) * gain;
-    o.type = type; o.frequency.value = freq;
-    g.gain.setValueAtTime(0.0001, c.currentTime + start);
-    g.gain.exponentialRampToValueAtTime(Math.max(vol, 0.0002), c.currentTime + start + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + start + dur);
-    o.connect(g); g.connect(c.destination);
-    o.start(c.currentTime + start); o.stop(c.currentTime + start + dur + 0.05);
+    var vol = parseFloat(els.volume.value) * gain * BOOST;
+    var t0 = c.currentTime + start, atk = Math.min(opts.attack || 0.02, dur * 0.5);
+    o.type = type; o.frequency.setValueAtTime(freq, t0);
+    if (opts.to) o.frequency.exponentialRampToValueAtTime(opts.to, t0 + dur);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(Math.max(vol, 0.0002), t0 + atk);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(bus);
+    o.start(t0); o.stop(t0 + dur + 0.05);
     pending.push(o);
     o.onended = function () { var i = pending.indexOf(o); if (i !== -1) pending.splice(i, 1); };
   }
@@ -177,17 +244,40 @@
     pending.slice().forEach(function (o) { try { o.stop(); } catch (e) {} });
     pending = []; scheduledFor = 0;
   }
+  // A struck bowl/bell: several partials of one base pitch, each with its own level and length
+  function strike(base, ratios, gains, durs, d, attack) {
+    ratios.forEach(function (r, i) { tone(base * r, d, durs[i], 'sine', gains[i], { attack: attack }); });
+  }
   function play(delay) {
     var d = delay || 0;
     switch (els.sound.value) {
-      case 'bell':
-        tone(660, d, 2.2, 'sine', 0.8); tone(1320, d, 1.6, 'sine', 0.3); tone(1980, d, 1.0, 'sine', 0.15); break;
-      case 'beep':
-        tone(880, d, 0.35, 'square', 0.25); break;
-      case 'double':
-        tone(880, d, 0.18, 'square', 0.25); tone(880, d + 0.28, 0.18, 'square', 0.25); break;
-      default:
-        tone(523.25, d, 1.2, 'sine', 0.7); tone(659.25, d + 0.18, 1.2, 'sine', 0.7); tone(783.99, d + 0.36, 1.6, 'sine', 0.7);
+      case 'crystal':
+        strike(523.25, [1, 1.006, 3.0, 4.2], [0.13, 0.1, 0.04, 0.02], [6, 6, 3.5, 2.5], d, 0.06); break;
+      case 'koshi':
+        [392, 587.33, 783.99].forEach(function (f, i) { tone(f, d + i * 0.4, 5, 'sine', 0.12, { attack: 0.01 }); }); break;
+      case 'handpan':
+        [[293.66, 0], [349.23, 0.45], [440, 0.9]].forEach(function (n) {
+          tone(n[0], d + n[1], 3.2, 'sine', 0.16, { attack: 0.004 });
+          tone(n[0] * 2, d + n[1], 2.2, 'sine', 0.07, { attack: 0.004 });
+          tone(n[0] * 3, d + n[1], 1.2, 'sine', 0.03, { attack: 0.004 });
+        }); break;
+      case 'swell':
+        // "Deep hum": low, warm drone with a slow shimmer
+        [[130.81, 0.18], [131.6, 0.14], [196, 0.1], [261.63, 0.06]].forEach(function (p) {
+          tone(p[0], d, 8, 'sine', p[1], { attack: 1.8 });
+        }); break;
+      case 'lowglass':
+        // "Glass rim": two near-identical tones that shimmer slowly against each other
+        tone(880, d, 4.5, 'sine', 0.15, { attack: 0.04 });
+        tone(883.5, d, 4.5, 'sine', 0.13, { attack: 0.04 });
+        tone(2640, d, 2, 'sine', 0.02, { attack: 0.04 }); break;
+      case 'drop':
+        // "Deep drop": low rounded plop with a long ring
+        tone(330, d, 0.12, 'sine', 0.25, { to: 660, attack: 0.01 });
+        tone(660, d + 0.08, 3.5, 'sine', 0.12, { attack: 0.015 });
+        tone(1320, d + 0.08, 1.2, 'sine', 0.025, { attack: 0.015 }); break;
+      default: // bowl
+        strike(220, [1, 1.011, 2.71, 5.2], [0.2, 0.15, 0.07, 0.03], [7, 7, 5, 3.5], d, 0.05);
     }
   }
 
@@ -195,7 +285,7 @@
   function tick() {
     var now = Date.now(), d = new Date(now);
     var h = d.getHours() % 12 || 12, m = String(d.getMinutes()).padStart(2, '0'), s = String(d.getSeconds()).padStart(2, '0');
-    els.time.innerHTML = h + ':' + m + '<small>' + s + '</small>';
+    els.time.innerHTML = h + ':' + m + '<small><span>' + (d.getHours() >= 12 ? 'PM' : 'AM') + '</span><span>' + s + '</span></small>';
 
     var prev = lastTick, gap = now - prev;
     lastTick = now;
@@ -224,7 +314,13 @@
       nextAt = computeNext(now);
       scheduledFor = 0;
     }
-    els.count.textContent = fmtCount(nextAt - now) + (audioReady() ? '' : ' 🔇');
+    setToggle(fmtCount(nextAt - now), 'Stop timer'); // time left lives in the button; it reads "Stop" on hover
+    els.mute.hidden = false;
+    var blocked = !audioReady() && now - loadedAt >= MUTE_HINT_DELAY;
+    els.mute.classList.toggle('warn', blocked);
+    setMuteTip(blocked ? 'Sound is blocked by the browser. Click anywhere here to enable it.'
+             : audioReady() ? 'Sound is on. Chimes will play at the next mark.'
+             : 'Starting sound…');
   }
 
   // Timer source: a Web Worker is not subject to the heavy throttling that hidden-tab
@@ -244,7 +340,7 @@
 
   function stopForSleep() {
     stop(true);
-    els.count.textContent = 'Stopped after sleep';
+    setMuteTip('Stopped after sleep. Press Start to resume.');
   }
 
   function start() {
@@ -253,7 +349,7 @@
     lastTick = Date.now();
     scheduledFor = 0;
     nextAt = computeNext(Date.now());
-    els.toggle.textContent = 'Stop';
+    setToggle(fmtCount(nextAt - Date.now()), 'Stop timer');
     document.body.classList.add('running');
     save();
     tick();
@@ -264,7 +360,7 @@
     lastTick = Date.now();
     scheduledFor = 0;
     nextAt = computeNext(Date.now());
-    els.toggle.textContent = 'Stop';
+    setToggle(fmtCount(nextAt - Date.now()), 'Stop timer');
     document.body.classList.add('running');
   }
   // keepSaved: stop without overwriting the saved on/off state, so an automatic stop
@@ -272,7 +368,9 @@
   function stop(keepSaved) {
     running = false;
     cancelPending();
-    els.count.textContent = 'Off'; els.toggle.textContent = 'Start';
+    setToggle('Start', 'Start timer'); // "off" is shown by the muted-speaker icon, not a text label
+    els.mute.classList.remove('warn');
+    setMuteTip('Timer is off. Press Start to begin.');
     document.body.classList.remove('running');
     if (!keepSaved) save();
   }
