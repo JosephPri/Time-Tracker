@@ -199,14 +199,14 @@
   }
 
   // ---- Sound (generated with Web Audio) ----
-  var BOOST = 2.2;      // overall loudness multiplier on top of the Volume slider
+  var BOOST = 4.5;      // overall loudness multiplier on top of the Volume slider
   var bus = null;       // all tones feed this bus: dry + reverb -> compressor -> speakers
   function audio() {
     if (!ctx) {
       var AC = window.AudioContext || window.webkitAudioContext; ctx = new AC();
       // soft limiter so the louder sounds can't clip, even at full volume
       var comp = ctx.createDynamicsCompressor();
-      comp.threshold.value = -12; comp.knee.value = 12; comp.ratio.value = 6;
+      comp.threshold.value = -8; comp.knee.value = 10; comp.ratio.value = 10;
       comp.attack.value = 0.005; comp.release.value = 0.25;
       comp.connect(ctx.destination);
       bus = ctx.createGain(); bus.connect(comp);
@@ -263,7 +263,7 @@
         }); break;
       case 'swell':
         // "Deep hum": low, warm drone with a slow shimmer
-        [[130.81, 0.18], [131.6, 0.14], [196, 0.1], [261.63, 0.06]].forEach(function (p) {
+        [[130.81, 0.34], [131.6, 0.26], [196, 0.2], [261.63, 0.12]].forEach(function (p) {
           tone(p[0], d, 8, 'sine', p[1], { attack: 1.8 });
         }); break;
       case 'lowglass':
